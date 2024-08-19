@@ -22,16 +22,16 @@ This project focuses on forecasting restaurant revenue using time series analysi
 ### 5. Use Case: Employee Planning
 - The forecasted revenue is intended to assist in better employee planning for the restaurant in Heidelberg. By accurately predicting revenue, the restaurant can optimize staffing levels and improve operational efficiency.
 
-## Requirements
-- Python 3.7+
-- pandas
-- numpy
-- scikit-learn
-- XGBoost
-- matplotlib (optional, for visualizations)
 
 ## How to Run
 1. Clone the repository:
    ```bash
    git clone https://github.com/yourusername/restaurant-revenue-forecasting.git
    cd restaurant-revenue-forecasting
+
+2. Install requirements
+    ```bash
+    pip install -r requirements.txt
+
+## Author
+Jonas Fischer - jonas.fisch1809@web.de
