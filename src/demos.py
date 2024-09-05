@@ -104,6 +104,10 @@ def create_test_and_train_set(df: pd.DataFrame):
 
     train_df = df.iloc[: eighty_pct - 1, :]
     test_df = df.iloc[eighty_pct:, :]
+    train_df = train_df.drop("weekday", axis=1)
+    test_df = test_df.drop("weekday", axis=1)
+    train_df["DOW"] = train_df["DOW"].astype(int)
+    test_df["DOW"] = test_df["DOW"].astype(int)
 
     return train_df, test_df
 
