@@ -2,4 +2,9 @@ numpy
 pandas
 GitPython
 seaborn
+loguru
 matplotlib
+optuna
+plotly
+xgboost
+# catboost

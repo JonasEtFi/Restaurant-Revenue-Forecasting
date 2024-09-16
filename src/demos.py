@@ -1,8 +1,4 @@
-from platform import java_ver
-from time import time
-
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 
@@ -241,8 +237,42 @@ def plot_avg_revenue_per_weekday(df: pd.DataFrame) -> None:
     plt.show()
 
 
-def plot_revenue_per_weekday(df: pd.DataFrame) -> None:
+def plot_revenue(df: pd.DataFrame, predictions) -> None:
+    """
+    Plots the revenue per weekday using a seaborn swarm plot.
 
+    Parameters:
+    ----------
+    df : pd.DataFrame
+        A DataFrame containing at least two columns: 'DOW' (day of the week)
+        and 'revenue' (revenue values).
+    """
+    revenue_df = df["revenue"]
+    df["predictions"] = predictions
+    pred_df = df["predictions"]
+    # Create a bar plot using seaborn catplot
+    sns.lineplot(data=revenue_df)
+
+    sns.lineplot(data=pred_df)
+    # Access the underlying axes from the FacetGrid and set the xticklabels font size
+
+    # Adjust layout for better visualization
+    # plt.tight_layout()
+
+    # Show the plot
+    plt.show()
+
+
+def plot_revenue_per_weekday(df: pd.DataFrame) -> None:
+    """
+    Plots the revenue per weekday using a seaborn swarm plot.
+
+    Parameters:
+    ----------
+    df : pd.DataFrame
+        A DataFrame containing at least two columns: 'DOW' (day of the week)
+        and 'revenue' (revenue values).
+    """
     revenue_per_day = df.sort_values(by=["DOW"])
 
     # Create a bar plot using seaborn catplot
@@ -256,3 +286,20 @@ def plot_revenue_per_weekday(df: pd.DataFrame) -> None:
 
     # Show the plot
     plt.show()
+
+
+def split_X_Y(df: pd.DataFrame):
+    """
+    Splits the DataFrame into feature matrix (X) and target vector (y).
+
+    Parameters:
+    ----------
+    df : pd.DataFrame
+        A DataFrame containing features and a target variable 'revenue'.
+    """
+    X = df.drop("revenue", axis=1)
+    X["DOW"] = X["DOW"].astype(int)
+    y = df["revenue"]
+    if "weekday" in df.columns:
+        X = X.drop("weekday", axis=1)
+    return X, y
