@@ -251,13 +251,14 @@ def plot_revenue(df: pd.DataFrame, predictions) -> None:
     df["predictions"] = predictions
     pred_df = df["predictions"]
     # Create a bar plot using seaborn catplot
-    sns.lineplot(data=revenue_df)
+    sns.lineplot(data=df, x=df.index, y="revenue", label="Actual Revenue")
+    sns.lineplot(data=df, x=df.index, y="predictions", label="Predicted Revenue")
 
-    sns.lineplot(data=pred_df)
     # Access the underlying axes from the FacetGrid and set the xticklabels font size
 
     # Adjust layout for better visualization
     # plt.tight_layout()
+    plt.legend()
 
     # Show the plot
     plt.show()
