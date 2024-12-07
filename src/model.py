@@ -24,6 +24,7 @@ def time_series_cross_validation(
 ):
     tscv = TimeSeriesSplit(n_splits=cv)
     scores = []
+    train_scores = []
     if plot_data:
         fig, ax = plt.subplots(ncols=1, nrows=cv, figsize=(7, 3 * cv / 2))
         # plt.tight_layout()
@@ -43,6 +44,8 @@ def time_series_cross_validation(
 
         # Calculate Mean Squared Error
         err = metric(y_test, predictions)
+        train_err = metric(y_train, model.predict(X_train))
+        train_scores.append(train_err)
         scores.append(err)
         # print(f"Shape of Training set {X_train.shape} and test set {X_test.shape}")
         # print(f"Mean Squared Error for current split: {err}")
@@ -61,9 +64,31 @@ def time_series_cross_validation(
     if plot_data:
         plt.show()
     average_mse = np.mean(scores)
+    average_train_mse = np.mean(train_scores)
+    print(f"Average Mean Squared Error across all splits: {average_mse}, Train: {average_train_mse}")
     # print(f"Average Mean Squared Error across all splits: {average_mse}")
     return average_mse
 
+def display_top_trials(study, top_n=10):
+    """
+    Displays the top trials in an Optuna study based on their objective value.
+
+    Parameters:
+    ----------
+    study : optuna.study.Study
+        The Optuna study object containing trials.
+    top_n : int, optional
+        The number of top trials to display (default is 10).
+    """
+    # Sort the trials by their objective values (lower is better)
+    top_trials = sorted(study.trials, key=lambda t: t.value)[:top_n]
+
+    print(f"Top {top_n} Trials:")
+    for i, trial in enumerate(top_trials):
+        print(f"Trial {i + 1}:")
+        print(f"  Error (Objective Value): {trial.value}")
+        print(f"  Parameters: {trial.params}")
+        print("-" * 40)
 
 def time_series_cross_validation_lgbm(
     data: pd.DataFrame,

@@ -1,59 +1,115 @@
 import matplotlib.pyplot as plt
+from numpy import int8
 import pandas as pd
 import seaborn as sns
 
 
-def prepare_data(wheater_data: str, revenue_data: str) -> pd.DataFrame:
+import pandas as pd
+
+def prepare_data(weather_data: str, revenue_data: str, rolling_windows: list = [7, 14]) -> pd.DataFrame:
     """
     Reads, cleans, and merges weather data with revenue and holiday data.
+    Adds rolling window features for revenue-related columns.
 
     Parameters:
     -------------
-    wheater_data (str): Path to the CSV file containing weather data.
+    weather_data (str): Path to the CSV file containing weather data.
     revenue_data (str): Path to the CSV file containing revenue and holiday data.
-
+    rolling_windows (list): List of window sizes for calculating rolling statistics.
 
     Returns:
     ------------
     df: A merged DataFrame containing both weather and revenue data.
-        The weather data has missing columns removed,
-        while the revenue data replaces `1` with `True`
-        for holidays and fills missing values with `False`.
+        Includes rolling window features for revenue-related data.
     """
-    pd.set_option("future.no_silent_downcasting", True)
+    # Read and prepare weather data
+    weather_df = pd.read_csv(weather_data, parse_dates=True, index_col=0)
+    weather_df = weather_df.dropna(axis=1)  # Remove columns with missing values
 
-    # read and prepare wheater data
-    wheater_df = pd.read_csv(wheater_data, parse_dates=True, index_col=0)
-    # delete the rows where we have no information. all other columns have no NaN value
-    wheater_df = wheater_df.dropna(axis=1)
-
-    # read and prepare revenua and holiday data
+    # Read and prepare revenue and holiday data
     revenue_df = pd.read_csv(revenue_data, sep=";", parse_dates=True, index_col=0)
     revenue_df = revenue_df.fillna(0)
 
     revenue_df["national_holiday"] = revenue_df["national_holiday"].astype(int)
-
     revenue_df["holiday_not_bw"] = revenue_df["holiday_not_bw"].astype(int)
     revenue_df["holiday"] = revenue_df["holiday"].astype(int)
 
-    revenue_df["holiday_all_germany"] = (
-        revenue_df["holiday_not_bw"] * revenue_df["holiday"]
-    )
-    revenue_df["national_and_holiday"] = (
-        revenue_df["national_holiday"] * revenue_df["holiday"]
-    )
+    revenue_df["holiday_all_germany"] = revenue_df["holiday_not_bw"] * revenue_df["holiday"]
+    revenue_df["national_and_holiday"] = revenue_df["national_holiday"] * revenue_df["holiday"]
 
-    df = pd.merge(wheater_df, revenue_df, left_index=True, right_index=True)
-    df = weekday_mapping(df)
-    df = add_lagged_features(df)
+    # Add rolling features for revenue columns based on the specified rolling windows
+    column = "revenue"
+    # Shift the column to exclude the current row from the rolling calculation
+    shifted_column = revenue_df[column].shift(1)
+    for window in rolling_windows:
+        # Compute the rolling mean using the shifted column
+        revenue_df[f"{column}_rolling_mean_{window}"] = shifted_column.rolling(window).mean()
+        # Fill NaN values with the original column values (optional)
+        revenue_df[f"{column}_rolling_mean_{window}"] = revenue_df[f"{column}_rolling_mean_{window}"].fillna(revenue_df[column])
+
+
+
+    # Merge weather and revenue data
+    df = pd.merge(weather_df, revenue_df, left_index=True, right_index=True)
+
+    # Add additional features
+    df = feature_engineering(df)
+
+    return df
+
+def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Performs feature engineering on the input DataFrame.
+
+    Args:
+    ----------
+    df (pd.DataFrame): The input DataFrame containing weather, revenue, and holiday data.
+
+    Returns:
+    ----------
+    pd.DataFrame: A DataFrame with additional features engineered from the input data.
+    """
+
+    # Add weekday one hot encoding
+    df = pd.get_dummies(df, dtype=int8)
+
+
+
+    # Add bridge day feature
     df = add_bridge_day(df)
 
+    # Add date components
     df["day"] = df.index.day
     df["month"] = df.index.month
     df["year"] = df.index.year
 
+    df['sunday_and_holiday'] = df['weekday_sunday'] * df['holiday']
+    df['saturday_and_holiday'] = df['weekday_saturday'] * df['holiday']
+    df['friday_and_holiday'] = df['weekday_friday'] * df['holiday']
+
+    df['sunday_and_national_holiday'] = df['weekday_sunday'] * df['national_holiday']
+    df['saturday_and_national_holiday'] = df['weekday_saturday'] * df['national_holiday']
+    df['friday_and_national_holiday'] = df['weekday_friday'] * df['national_holiday']
+
+    df["season"] = df["month"].apply(get_season)
+    df["spring"] = (df["season"] == "spring").astype(int8)
+    df["summer"] = (df["season"] == "summer").astype(int8)
+    df["fall"] = (df["season"] == "fall").astype(int8)
+    df["winter"] = (df["season"] == "winter").astype(int8)
+
+    df = df.drop("season", axis=1)
+
     return df
 
+def get_season(month):
+    if month in [3, 4, 5]:
+        return "spring"
+    elif month in [6, 7, 8]:
+        return "summer"
+    elif month in [9, 10, 11]:
+        return "fall"
+    else:
+        return "winter"
 
 def add_bridge_day(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -69,12 +125,12 @@ def add_bridge_day(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: The original DataFrame with an added 'bridge_day' column.
     """
     # Condition for Friday with the previous day being a national holiday
-    friday_condition = (df["weekday"].str.lower() == "friday") & (
+    friday_condition = (df["weekday_friday"] == 1) & (
         df["national_holiday"].shift(1) == 1
     )
 
     # Condition for Monday with the next day being a national holiday
-    monday_condition = (df["weekday"].str.lower() == "monday") & (
+    monday_condition = (df["weekday_monday"] == 1) & (
         df["national_holiday"].shift(-1) == 1
     )
 
@@ -100,10 +156,6 @@ def create_test_and_train_set(df: pd.DataFrame):
 
     train_df = df.iloc[: eighty_pct - 1, :]
     test_df = df.iloc[eighty_pct:, :]
-    train_df = train_df.drop("weekday", axis=1)
-    test_df = test_df.drop("weekday", axis=1)
-    train_df["DOW"] = train_df["DOW"].astype(int)
-    test_df["DOW"] = test_df["DOW"].astype(int)
 
     return train_df, test_df
 
@@ -219,48 +271,123 @@ def plot_data(df: pd.DataFrame) -> None:
     plt.tight_layout()
     plt.show()
 
-
 def plot_avg_revenue_per_weekday(df: pd.DataFrame) -> None:
-    # Sort values by day of the week
-    revenue_per_day = df.sort_values(by=["DOW"])
+    """
+    Plots the average revenue per weekday using one-hot encoded weekday columns.
 
-    # Create a bar plot using seaborn catplot
-    g = sns.catplot(data=revenue_per_day, kind="bar", x="weekday", y="revenue")
+    Parameters:
+    ----------
+    df : pd.DataFrame
+        A DataFrame containing one-hot encoded weekday columns 
+        (e.g., 'weekday_monday', 'weekday_tuesday', ...) and 'revenue'.
+    """
+    # Extract weekday columns
+    weekday_columns = [col for col in df.columns if col.startswith("weekday_")]
 
-    # Access the underlying axes from the FacetGrid and set the xticklabels font size
-    g.ax.set_xticklabels(g.ax.get_xticklabels(), fontsize=7)
+    # Calculate average revenue for each weekday
+    avg_revenue_per_weekday = {
+        col.split("_")[1].capitalize(): df.loc[df[col] == 1, "revenue"].mean()
+        for col in weekday_columns
+    }
+
+    # Convert to a DataFrame for plotting
+    avg_revenue_df = pd.DataFrame(
+        list(avg_revenue_per_weekday.items()), columns=["Weekday", "Average Revenue"]
+    )
+
+    # Sort by weekday order
+    weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    avg_revenue_df["Weekday"] = pd.Categorical(avg_revenue_df["Weekday"], categories=weekday_order, ordered=True)
+    avg_revenue_df = avg_revenue_df.sort_values("Weekday")
+
+    # Create a bar plot using seaborn
+    plt.figure(figsize=(10, 6))
+    sns.barplot(data=avg_revenue_df, x="Weekday", y="Average Revenue", palette="viridis")
+
+    # Add labels and title
+    plt.xlabel("Weekday")
+    plt.ylabel("Average Revenue")
+    plt.title("Average Revenue Per Weekday")
 
     # Adjust layout for better visualization
-    # plt.tight_layout()
+    plt.tight_layout()
 
     # Show the plot
     plt.show()
 
 
-def plot_revenue(df: pd.DataFrame, predictions) -> None:
+def plot_revenue(df: pd.DataFrame, predictions, title=None) -> None:
     """
-    Plots the revenue per weekday using a seaborn swarm plot.
+    Plots the revenue and predictions over time using a line plot.
 
     Parameters:
     ----------
     df : pd.DataFrame
         A DataFrame containing at least two columns: 'DOW' (day of the week)
         and 'revenue' (revenue values).
+    predictions : array-like
+        The predicted revenue values.
+    title : str, optional
+        The title of the plot. Default is None.
     """
-    revenue_df = df["revenue"]
+    # Add predictions to the DataFrame
     df["predictions"] = predictions
-    pred_df = df["predictions"]
-    # Create a bar plot using seaborn catplot
+
+    # Create the line plot
+    plt.figure(figsize=(10, 6))
     sns.lineplot(data=df, x=df.index, y="revenue", label="Actual Revenue")
     sns.lineplot(data=df, x=df.index, y="predictions", label="Predicted Revenue")
 
-    # Access the underlying axes from the FacetGrid and set the xticklabels font size
+    # Set the title if provided
+    if title:
+        plt.title(title)
 
-    # Adjust layout for better visualization
-    # plt.tight_layout()
+    # Add labels and legend
+    plt.xlabel("Index")
+    plt.ylabel("Revenue")
     plt.legend()
 
-    # Show the plot
+    # Adjust layout and show the plot
+    plt.tight_layout()
+    plt.show()
+
+def plot_mse(df: pd.DataFrame, predictions, title=None) -> None:
+    """
+    Plots the revenue and predictions over time, along with the Mean Squared Error (MSE) for each point.
+
+    Parameters:
+    ----------
+    df : pd.DataFrame
+        A DataFrame containing at least two columns: 'DOW' (day of the week)
+        and 'revenue' (revenue values).
+    predictions : array-like
+        The predicted revenue values.
+    title : str, optional
+        The title of the plot. Default is None.
+    """
+    # Add predictions to the DataFrame
+    df["predictions"] = predictions
+    
+    # Calculate MSE for each point
+    df["mse"] = (df["revenue"] - df["predictions"])**2
+
+    # Create the plot
+    plt.figure(figsize=(12, 8))
+    
+    # Plot the MSE as a secondary line
+    sns.lineplot(data=df, x=df.index, y="mse", label="MSE (Per Data Point)", color="red", linestyle="--")
+
+    # Set the title if provided
+    if title:
+        plt.title(title)
+
+    # Add labels and legend
+    plt.xlabel("Index")
+    plt.ylabel("Value")
+    plt.legend()
+
+    # Adjust layout and show the plot
+    plt.tight_layout()
     plt.show()
 
 
@@ -271,22 +398,41 @@ def plot_revenue_per_weekday(df: pd.DataFrame) -> None:
     Parameters:
     ----------
     df : pd.DataFrame
-        A DataFrame containing at least two columns: 'DOW' (day of the week)
-        and 'revenue' (revenue values).
+        A DataFrame containing one-hot encoded weekday columns
+        (e.g., 'weekday_monday', 'weekday_tuesday', ...) and 'revenue'.
     """
-    revenue_per_day = df.sort_values(by=["DOW"])
+    # Extract weekday columns
+    weekday_columns = [col for col in df.columns if col.startswith("weekday_")]
 
-    # Create a bar plot using seaborn catplot
-    g = sns.catplot(data=revenue_per_day, s=5, kind="swarm", x="weekday", y="revenue")
+    # Prepare a long-format DataFrame for plotting
+    long_format_data = []
+    for col in weekday_columns:
+        day_name = col.split("_")[1].capitalize()
+        day_revenue = df.loc[df[col] == 1, "revenue"]
+        long_format_data.extend([(day_name, revenue) for revenue in day_revenue])
 
-    # Access the underlying axes from the FacetGrid and set the xticklabels font size
-    g.ax.set_xticklabels(g.ax.get_xticklabels(), fontsize=7)
+    # Convert to DataFrame
+    plot_df = pd.DataFrame(long_format_data, columns=["weekday", "revenue"])
+
+    # Sort by weekday order
+    weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    plot_df["weekday"] = pd.Categorical(plot_df["weekday"], categories=weekday_order, ordered=True)
+
+    # Create a swarm plot using seaborn
+    plt.figure(figsize=(10, 6))
+    sns.swarmplot(data=plot_df, x="weekday", y="revenue", size=5)
+
+    # Add labels and title
+    plt.xlabel("Weekday")
+    plt.ylabel("Revenue")
+    plt.title("Revenue Distribution Per Weekday")
 
     # Adjust layout for better visualization
-    # plt.tight_layout()
+    plt.tight_layout()
 
     # Show the plot
     plt.show()
+
 
 
 def split_X_Y(df: pd.DataFrame):
@@ -299,8 +445,6 @@ def split_X_Y(df: pd.DataFrame):
         A DataFrame containing features and a target variable 'revenue'.
     """
     X = df.drop("revenue", axis=1)
-    X["DOW"] = X["DOW"].astype(int)
     y = df["revenue"]
-    if "weekday" in df.columns:
-        X = X.drop("weekday", axis=1)
+
     return X, y
